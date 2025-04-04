@@ -14,6 +14,7 @@ export interface AccessToken {
   defaultApiVersion: number;
   lastUsed: number;
   lastModified?: number;
+  tokenType: string;
 }
 
 export interface TokensResponse {

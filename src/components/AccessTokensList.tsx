@@ -33,27 +33,68 @@ export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: Acce
     setIsLoading(true);
     onLoadingChange(true);
     setError(null);
+    const uniqueTokens = new Map<string, AccessToken>();
+    const limit = 50;
 
     try {
-      const url = 'https://app.launchdarkly.com/api/v2/tokens?showAll=true';
-      const response = await fetch(url, {
+      // First request without offset to check if we get all tokens
+      const initialUrl = 'https://app.launchdarkly.com/api/v2/tokens?showAll=true';
+      const initialResponse = await fetch(initialUrl, {
         headers: {
           'Authorization': apiToken,
           'Content-Type': 'application/json'
         }
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (!initialResponse.ok) {
+        throw new Error(`HTTP error! status: ${initialResponse.status}`);
       }
 
-      const data: TokensResponse = await response.json();
+      const initialData: TokensResponse = await initialResponse.json();
       
-      const allTokens = data.items.map(token => ({
-        ...token,
-        name: token.name || `Unnamed Token (${token._id})`,
-        _tokenType: token.serviceToken ? 'service' : 'personal' as TokenType
-      })).sort((a, b) => {
+      // Process initial response
+      initialData.items.forEach(token => {
+        uniqueTokens.set(token._id, {
+          ...token,
+          name: token.name || `Unnamed Token (${token._id})`,
+          tokenType: token.serviceToken ? 'service' : 'personal' as TokenType
+        });
+      });
+
+      // Check if we need pagination
+      if (initialData.items.length < initialData.totalCount) {
+        // Start from offset 25 since that's the default limit of the first response
+        let offset = 25;
+        
+        do {
+          const url = `https://app.launchdarkly.com/api/v2/tokens?offset=${offset}&limit=${limit}`;
+          const response = await fetch(url, {
+            headers: {
+              'Authorization': apiToken,
+              'Content-Type': 'application/json'
+            }
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const data: TokensResponse = await response.json();
+          
+          data.items.forEach(token => {
+            uniqueTokens.set(token._id, {
+              ...token,
+              name: token.name || `Unnamed Token (${token._id})`,
+              tokenType: token.serviceToken ? 'service' : 'personal' as TokenType
+            });
+          });
+          
+          offset += limit;
+        } while (offset < initialData.totalCount);
+      }
+
+      // Convert map to array and sort
+      const allTokens = Array.from(uniqueTokens.values()).sort((a, b) => {
         const nameA = a.name || '';
         const nameB = b.name || '';
         return nameA.localeCompare(nameB);
@@ -340,8 +381,15 @@ export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: Acce
                 <tr key={token._id} className="hover:bg-gray-50">
                   <td className="px-3 py-4 text-sm text-gray-500">{index + 1}</td>
                   <td className="px-3 py-4">
-                    <div className="text-sm font-medium text-gray-900 truncate max-w-xs" title={token.name}>
-                      {token.name}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900 truncate max-w-xs" title={token.name}>
+                        {token.name || `Unnamed Token (${token._id})`}
+                      </span>
+                      {token.serviceToken && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                          Service
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-3 py-4">
