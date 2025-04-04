@@ -17,6 +17,7 @@ interface AccessToken {
   serviceToken: boolean;
   defaultApiVersion: number;
   lastUsed: number;
+  lastModified?: number;
 }
 
 interface TokensResponse {
@@ -29,8 +30,100 @@ interface TokensResponse {
   };
 }
 
-type SortField = 'name' | 'owner' | 'creationDate' | 'role' | 'apiVersion' | 'lastUsed';
+interface ResetTokenResponse {
+  token: string;
+}
+
+type SortField = 'name' | 'owner' | 'creationDate' | 'role' | 'apiVersion' | 'lastUsed' | 'lastModified';
 type SortDirection = 'asc' | 'desc';
+
+interface ResetModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onReset: (expiry: number) => void;
+  tokenName: string;
+}
+
+function ResetModal({ isOpen, onClose, onReset, tokenName }: ResetModalProps) {
+  const [expiry, setExpiry] = useState('30');
+  
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
+        <h3 className="text-lg font-semibold mb-4">Reset Access Token</h3>
+        <p className="mb-4 text-gray-600">
+          Set expiry time for token: <span className="font-medium">{tokenName}</span>
+        </p>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Token expiry (days)
+          </label>
+          <input
+            type="number"
+            min="1"
+            max="365"
+            value={expiry}
+            onChange={(e) => setExpiry(e.target.value)}
+            className="w-full px-3 py-2 border rounded-md"
+          />
+        </div>
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 hover:text-gray-800"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onReset(parseInt(expiry))}
+            className="px-4 py-2 bg-blue-500 text-red-800 rounded hover:bg-blue-600"
+          >
+            Reset Token
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface NewTokenDisplayProps {
+  token: string | null;
+  onClose: () => void;
+}
+
+function NewTokenDisplay({ token, onClose }: NewTokenDisplayProps) {
+  if (!token) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
+        <h3 className="text-lg font-semibold mb-4">New Access Token</h3>
+        <p className="text-red-600 mb-4 text-sm">
+          Make sure to copy your new access token now. You won't be able to see it again!
+        </p>
+        <div className="bg-gray-100 p-3 rounded-md mb-4 break-all font-mono text-sm">
+          {token}
+        </div>
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={() => navigator.clipboard.writeText(token)}
+            className="px-4 py-2 bg-blue-500 text-gray-800 rounded hover:bg-blue-600"
+          >
+            Copy token
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 hover:text-gray-800"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function AccessTokensList() {
   const [tokens, setTokens] = useState<AccessToken[]>([]);
@@ -41,6 +134,11 @@ export function AccessTokensList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingTokenId, setDeletingTokenId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [showApiVersion, setShowApiVersion] = useState(false);
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [selectedToken, setSelectedToken] = useState<AccessToken | null>(null);
+  const [newToken, setNewToken] = useState<string | null>(null);
+  const [resettingTokenId, setResettingTokenId] = useState<string | null>(null);
 
   const fetchAllTokens = async () => {
     setIsLoading(true);
@@ -189,6 +287,9 @@ export function AccessTokensList() {
         case 'lastUsed':
           compareResult = a.lastUsed - b.lastUsed;
           break;
+        case 'lastModified':
+          compareResult = (a.lastModified || a.creationDate) - (b.lastModified || b.creationDate);
+          break;
       }
       return sortDirection === 'asc' ? compareResult : -compareResult;
     });
@@ -224,6 +325,49 @@ export function AccessTokensList() {
     }
   };
 
+  const handleResetClick = (token: AccessToken) => {
+    setSelectedToken(token);
+    setResetModalOpen(true);
+  };
+
+  const handleResetToken = async (expiry: number) => {
+    if (!selectedToken) return;
+
+    setResetModalOpen(false);
+    setResettingTokenId(selectedToken._id);
+    setError(null);
+
+    try {
+      const response = await fetch(`https://app.launchdarkly.com/api/v2/tokens/${selectedToken._id}/reset`, {
+        method: 'POST',
+        headers: {
+          'Authorization': import.meta.env.VITE_LD_API_TOKEN,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          expiry: expiry * 24 * 60 * 60 // Convert days to seconds
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to reset token: ${errorText}`);
+      }
+
+      const data: ResetTokenResponse = await response.json();
+      setNewToken(data.token);
+      
+      // Refresh the tokens list
+      await fetchAllTokens();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset token');
+      console.error('Error resetting token:', err);
+    } finally {
+      setResettingTokenId(null);
+      setSelectedToken(null);
+    }
+  };
+
   if (isLoading) {
     return <div className="flex justify-center p-4">Loading tokens...</div>;
   }
@@ -233,114 +377,198 @@ export function AccessTokensList() {
   }
 
   return (
-    <div className="p-4">
-      <div className="flex flex-col gap-4">
-        {deleteError && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
-            <span className="block sm:inline">{deleteError}</span>
-            <span 
-              className="absolute top-0 bottom-0 right-0 px-4 py-3 cursor-pointer"
-              onClick={() => setDeleteError(null)}
-            >
-              ×
-            </span>
-          </div>
-        )}
+    <>
+      <div className="w-full">
+        <div className="flex flex-col gap-4">
+          {deleteError && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+              <span className="block sm:inline">{deleteError}</span>
+              <span 
+                className="absolute top-0 bottom-0 right-0 px-4 py-3 cursor-pointer"
+                onClick={() => setDeleteError(null)}
+              >
+                ×
+              </span>
+            </div>
+          )}
 
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold">Service Access Tokens ({filteredAndSortedTokens.length} total)</h2>
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search tokens..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+            <h2 className="text-xl font-bold">Service Access Tokens ({filteredAndSortedTokens.length} total)</h2>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-sm text-gray-600 whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={showApiVersion}
+                  onChange={(e) => setShowApiVersion(e.target.checked)}
+                  className="form-checkbox h-4 w-4 text-blue-600"
+                />
+                Show API Version
+              </label>
+              <input
+                type="text"
+                placeholder="Search tokens..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[200px]"
+              />
+            </div>
           </div>
         </div>
-      </div>
-      
-      <div className="overflow-x-auto mt-4">
-        <table className="min-w-full bg-white border border-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('name')}
-              >
-                Name {getSortIcon('name')}
-              </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('owner')}
-              >
-                Owner {getSortIcon('owner')}
-              </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('creationDate')}
-              >
-                Created {getSortIcon('creationDate')}
-              </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('role')}
-              >
-                Role {getSortIcon('role')}
-              </th>
-              {filteredAndSortedTokens.some(token => token.defaultApiVersion) && (
+        
+        <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 shadow">
+          <table className="min-w-full divide-y divide-gray-200 bg-white">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="w-12 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
                 <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('apiVersion')}
+                  className="w-64 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('name')}
                 >
-                  API Version {getSortIcon('apiVersion')}
+                  <div className="flex items-center">
+                    <span className="truncate">Name</span> {getSortIcon('name')}
+                  </div>
                 </th>
-              )}
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('lastUsed')}
-              >
-                Last Used {getSortIcon('lastUsed')}
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {filteredAndSortedTokens.map((token, index) => (
-              <tr key={token._id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{index + 1}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{token.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {token._member ? 
-                    `${token._member.firstName} ${token._member.lastName}` : 
-                    'N/A'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">{formatDate(token.creationDate)}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{determineRole(token)}</td>
-                {filteredAndSortedTokens.some(token => token.defaultApiVersion) && (
-                  <td className="px-6 py-4 whitespace-nowrap">{token.defaultApiVersion || '-'}</td>
-                )}
-                <td className="px-6 py-4 whitespace-nowrap">{formatDate(token.lastUsed)}</td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <button
-                    onClick={() => handleDeleteToken(token._id, token.name)}
-                    disabled={deletingTokenId === token._id}
-                    className={`text-red-600 hover:text-red-800 font-medium ${
-                      deletingTokenId === token._id ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
+                <th 
+                  className="w-48 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('owner')}
+                >
+                  <div className="flex items-center">
+                    <span className="truncate">Owner</span> {getSortIcon('owner')}
+                  </div>
+                </th>
+                <th 
+                  className="w-36 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('creationDate')}
+                >
+                  <div className="flex items-center">
+                    <span className="truncate">Created</span> {getSortIcon('creationDate')}
+                  </div>
+                </th>
+                <th 
+                  className="w-36 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('lastModified')}
+                >
+                  <div className="flex items-center">
+                    <span className="truncate">Modified</span> {getSortIcon('lastModified')}
+                  </div>
+                </th>
+                <th 
+                  className="w-32 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('role')}
+                >
+                  <div className="flex items-center">
+                    <span className="truncate">Role</span> {getSortIcon('role')}
+                  </div>
+                </th>
+                {showApiVersion && (
+                  <th 
+                    className="w-24 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('apiVersion')}
                   >
-                    {deletingTokenId === token._id ? 'Deleting...' : 'Delete'}
-                  </button>
-                </td>
+                    <div className="flex items-center">
+                      <span className="truncate">API Ver</span> {getSortIcon('apiVersion')}
+                    </div>
+                  </th>
+                )}
+                <th 
+                  className="w-36 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('lastUsed')}
+                >
+                  <div className="flex items-center">
+                    <span className="truncate">Last Used</span> {getSortIcon('lastUsed')}
+                  </div>
+                </th>
+                <th className="w-32 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {filteredAndSortedTokens.map((token, index) => (
+                <tr key={token._id} className="hover:bg-gray-50">
+                  <td className="px-3 py-4 text-sm text-gray-500">{index + 1}</td>
+                  <td className="px-3 py-4">
+                    <div className="text-sm font-medium text-gray-900 truncate max-w-xs" title={token.name}>
+                      {token.name}
+                    </div>
+                  </td>
+                  <td className="px-3 py-4">
+                    <div className="text-sm text-gray-900 truncate" title={token._member ? `${token._member.firstName} ${token._member.lastName}` : 'N/A'}>
+                      {token._member ? 
+                        `${token._member.firstName} ${token._member.lastName}` : 
+                        'N/A'}
+                    </div>
+                  </td>
+                  <td className="px-3 py-4">
+                    <div className="text-sm text-gray-900 truncate" title={formatDate(token.creationDate)}>
+                      {formatDate(token.creationDate)}
+                    </div>
+                  </td>
+                  <td className="px-3 py-4">
+                    <div className="text-sm text-gray-900 truncate" title={formatDate(token.lastModified || token.creationDate)}>
+                      {formatDate(token.lastModified || token.creationDate)}
+                    </div>
+                  </td>
+                  <td className="px-3 py-4">
+                    <div className="text-sm text-gray-900 truncate" title={determineRole(token)}>
+                      {determineRole(token)}
+                    </div>
+                  </td>
+                  {showApiVersion && (
+                    <td className="px-3 py-4">
+                      <div className="text-sm text-gray-900 truncate">
+                        {token.defaultApiVersion || '-'}
+                      </div>
+                    </td>
+                  )}
+                  <td className="px-3 py-4">
+                    <div className="text-sm text-gray-900 truncate" title={formatDate(token.lastUsed)}>
+                      {formatDate(token.lastUsed)}
+                    </div>
+                  </td>
+                  <td className="px-3 py-4 whitespace-nowrap">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleDeleteToken(token._id, token.name)}
+                        disabled={deletingTokenId === token._id}
+                        className={`text-red-600 hover:text-red-800 text-sm font-medium ${
+                          deletingTokenId === token._id ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                      >
+                        {deletingTokenId === token._id ? 'Deleting...' : 'Delete'}
+                      </button>
+                      <button
+                        onClick={() => handleResetClick(token)}
+                        disabled={resettingTokenId === token._id}
+                        className={`text-blue-600 hover:text-blue-800 text-sm font-medium ${
+                          resettingTokenId === token._id ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                      >
+                        {resettingTokenId === token._id ? 'Resetting...' : 'Reset'}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+
+      <ResetModal
+        isOpen={resetModalOpen}
+        onClose={() => {
+          setResetModalOpen(false);
+          setSelectedToken(null);
+        }}
+        onReset={handleResetToken}
+        tokenName={selectedToken?.name || ''}
+      />
+
+      <NewTokenDisplay
+        token={newToken}
+        onClose={() => setNewToken(null)}
+      />
+    </>
   );
 } 
