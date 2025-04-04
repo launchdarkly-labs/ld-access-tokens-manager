@@ -1,131 +1,18 @@
-import React from 'react';
-import { useEffect, useState, useMemo } from 'react';
-import { format } from 'date-fns';
+import React, { useEffect, useState, useMemo } from 'react';
+import { AccessToken, TokensResponse, ResetTokenResponse, SortField, SortDirection } from '../types/AccessToken';
+import { DeleteTokenButton } from './DeleteTokenButton';
+import { ResetTokenButton } from './ResetTokenButton';
+import { ResetTokenModal } from './ResetTokenModal';
+import { NewTokenModal } from './NewTokenModal';
+import { determineRole, formatDate } from '../utils/tokenUtils';
 
-interface AccessToken {
-  _id: string;
-  name: string;
-  _member?: {
-    email: string;
-    firstName: string;
-    lastName: string;
-  };
-  creationDate: number;
-  customRoleIds?: string[];
-  inlineRole?: Array<{ effect: string }>;
-  role?: string;
-  serviceToken: boolean;
-  defaultApiVersion: number;
-  lastUsed: number;
-  lastModified?: number;
+interface AccessTokensListProps {
+  apiToken: string;
+  shouldLoad: boolean;
+  onLoadingChange: (isLoading: boolean) => void;
 }
 
-interface TokensResponse {
-  items: AccessToken[];
-  totalCount: number;
-  _links: {
-    self?: { href: string };
-    next?: { href: string };
-    prev?: { href: string };
-  };
-}
-
-interface ResetTokenResponse {
-  token: string;
-}
-
-type SortField = 'name' | 'owner' | 'creationDate' | 'role' | 'apiVersion' | 'lastUsed' | 'lastModified';
-type SortDirection = 'asc' | 'desc';
-
-interface ResetModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onReset: (expiry: number) => void;
-  tokenName: string;
-}
-
-function ResetModal({ isOpen, onClose, onReset, tokenName }: ResetModalProps) {
-  const [expiry, setExpiry] = useState('30');
-  
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
-        <h3 className="text-lg font-semibold mb-4">Reset Access Token</h3>
-        <p className="mb-4 text-gray-600">
-          Set expiry time for token: <span className="font-medium">{tokenName}</span>
-        </p>
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Token expiry (days)
-          </label>
-          <input
-            type="number"
-            min="1"
-            max="365"
-            value={expiry}
-            onChange={(e) => setExpiry(e.target.value)}
-            className="w-full px-3 py-2 border rounded-md"
-          />
-        </div>
-        <div className="flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onReset(parseInt(expiry))}
-            className="px-4 py-2 bg-blue-500 text-red-800 rounded hover:bg-blue-600"
-          >
-            Reset Token
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface NewTokenDisplayProps {
-  token: string | null;
-  onClose: () => void;
-}
-
-function NewTokenDisplay({ token, onClose }: NewTokenDisplayProps) {
-  if (!token) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full">
-        <h3 className="text-lg font-semibold mb-4">New Access Token</h3>
-        <p className="text-red-600 mb-4 text-sm">
-          Make sure to copy your new access token now. You won't be able to see it again!
-        </p>
-        <div className="bg-gray-100 p-3 rounded-md mb-4 break-all font-mono text-sm">
-          {token}
-        </div>
-        <div className="flex justify-end gap-3">
-          <button
-            onClick={() => navigator.clipboard.writeText(token)}
-            className="px-4 py-2 bg-blue-500 text-gray-800 rounded hover:bg-blue-600"
-          >
-            Copy token
-          </button>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function AccessTokensList() {
+export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: AccessTokensListProps) {
   const [tokens, setTokens] = useState<AccessToken[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +29,7 @@ export function AccessTokensList() {
 
   const fetchAllTokens = async () => {
     setIsLoading(true);
+    onLoadingChange(true);
     setError(null);
     const uniqueTokens = new Map<string, AccessToken>();
     const limit = 50;
@@ -152,88 +40,49 @@ export function AccessTokensList() {
 
       do {
         const url = `https://app.launchdarkly.com/api/v2/tokens?offset=${offset}&limit=${limit}`;
-        console.log('Making request to:', url);
         
         const response = await fetch(url, {
           headers: {
-            'Authorization': import.meta.env.VITE_LD_API_TOKEN,
+            'Authorization': apiToken,
             'Content-Type': 'application/json'
           }
         });
 
-        console.log('Response status:', response.status);
-        
         if (!response.ok) {
           const errorText = await response.text();
-          console.error('Error response:', errorText);
           throw new Error(`HTTP error! status: ${response.status}, details: ${errorText}`);
         }
 
         const data: TokensResponse = await response.json();
         
-        // Set totalCount on first request
         if (offset === 0) {
           totalCount = data.totalCount;
-          console.log('Total tokens to fetch:', totalCount);
         }
 
-        console.log('Response data:', {
-          offset,
-          itemsCount: data.items.length,
-          totalCount: data.totalCount,
-        });
-        
-        // Add new tokens to our map, using _id as unique identifier
         data.items.forEach(token => {
           uniqueTokens.set(token._id, token);
         });
-
-        console.log(`Fetched ${data.items.length} tokens, unique tokens so far: ${uniqueTokens.size}`);
         
-        // Increment offset for next request
         offset += limit;
       } while (offset < totalCount);
 
-      // Convert map to array and sort by name
       const allTokens = Array.from(uniqueTokens.values())
         .sort((a, b) => a.name.localeCompare(b.name));
 
       setTokens(allTokens);
-      console.log(`Finished fetching. Total unique tokens: ${allTokens.length}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred while fetching tokens');
     } finally {
       setIsLoading(false);
+      onLoadingChange(false);
     }
   };
 
   useEffect(() => {
-    fetchAllTokens();
-  }, []);
-
-  const determineRole = (token: AccessToken): string => {
-    if (token.customRoleIds?.length) {
-      return 'Custom Roles';
+    if (shouldLoad) {
+      fetchAllTokens();
     }
-    if (token.inlineRole?.length) {
-      return 'Inline Role';
-    }
-    return token.role || 'Unknown';
-  };
-
-  const formatDate = (timestamp: number): string => {
-    try {
-      if (!timestamp) return 'Never';
-      // Convert timestamp to milliseconds if it's in seconds
-      const timestampInMs = timestamp < 1e12 ? timestamp * 1000 : timestamp;
-      const date = new Date(timestampInMs);
-      // Check if date is valid
-      if (isNaN(date.getTime())) return 'Invalid date';
-      return format(date, 'PPP');
-    } catch (err) {
-      return 'Invalid date';
-    }
-  };
+  }, [shouldLoad]);
 
   const handleSort = (field: SortField) => {
     if (field === sortField) {
@@ -249,10 +98,75 @@ export function AccessTokensList() {
     return sortDirection === 'asc' ? '↑' : '↓';
   };
 
+  const handleDeleteToken = async (tokenId: string, tokenName: string) => {
+    setDeletingTokenId(tokenId);
+    setDeleteError(null);
+
+    try {
+      const response = await fetch(`https://app.launchdarkly.com/api/v2/tokens/${tokenId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': apiToken,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to delete token: ${errorText}`);
+      }
+
+      setTokens(prevTokens => prevTokens.filter(token => token._id !== tokenId));
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete token');
+    } finally {
+      setDeletingTokenId(null);
+    }
+  };
+
+  const handleResetClick = (token: AccessToken) => {
+    setSelectedToken(token);
+    setResetModalOpen(true);
+  };
+
+  const handleResetToken = async (expiry: number) => {
+    if (!selectedToken) return;
+
+    setResetModalOpen(false);
+    setResettingTokenId(selectedToken._id);
+    setError(null);
+
+    try {
+      const response = await fetch(`https://app.launchdarkly.com/api/v2/tokens/${selectedToken._id}/reset`, {
+        method: 'POST',
+        headers: {
+          'Authorization': apiToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          expiry: expiry * 24 * 60 * 60
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to reset token: ${errorText}`);
+      }
+
+      const data: ResetTokenResponse = await response.json();
+      setNewToken(data.token);
+      await fetchAllTokens();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset token');
+    } finally {
+      setResettingTokenId(null);
+      setSelectedToken(null);
+    }
+  };
+
   const filteredAndSortedTokens = useMemo(() => {
     let result = [...tokens];
     
-    // Apply search filter
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
       result = result.filter(token => 
@@ -263,7 +177,6 @@ export function AccessTokensList() {
       );
     }
 
-    // Apply sorting
     result.sort((a, b) => {
       let compareResult = 0;
       switch (sortField) {
@@ -297,76 +210,9 @@ export function AccessTokensList() {
     return result;
   }, [tokens, sortField, sortDirection, searchTerm]);
 
-  const handleDeleteToken = async (tokenId: string, tokenName: string) => {
-    setDeletingTokenId(tokenId);
-    setDeleteError(null);
-
-    try {
-      const response = await fetch(`https://app.launchdarkly.com/api/v2/tokens/${tokenId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': import.meta.env.VITE_LD_API_TOKEN,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to delete token: ${errorText}`);
-      }
-
-      // Remove the token from the local state
-      setTokens(prevTokens => prevTokens.filter(token => token._id !== tokenId));
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Failed to delete token');
-      console.error('Error deleting token:', err);
-    } finally {
-      setDeletingTokenId(null);
-    }
-  };
-
-  const handleResetClick = (token: AccessToken) => {
-    setSelectedToken(token);
-    setResetModalOpen(true);
-  };
-
-  const handleResetToken = async (expiry: number) => {
-    if (!selectedToken) return;
-
-    setResetModalOpen(false);
-    setResettingTokenId(selectedToken._id);
-    setError(null);
-
-    try {
-      const response = await fetch(`https://app.launchdarkly.com/api/v2/tokens/${selectedToken._id}/reset`, {
-        method: 'POST',
-        headers: {
-          'Authorization': import.meta.env.VITE_LD_API_TOKEN,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          expiry: expiry * 24 * 60 * 60 // Convert days to seconds
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to reset token: ${errorText}`);
-      }
-
-      const data: ResetTokenResponse = await response.json();
-      setNewToken(data.token);
-      
-      // Refresh the tokens list
-      await fetchAllTokens();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reset token');
-      console.error('Error resetting token:', err);
-    } finally {
-      setResettingTokenId(null);
-      setSelectedToken(null);
-    }
-  };
+  if (!shouldLoad) {
+    return null;
+  }
 
   if (isLoading) {
     return <div className="flex justify-center p-4">Loading tokens...</div>;
@@ -425,7 +271,7 @@ export function AccessTokensList() {
                   onClick={() => handleSort('name')}
                 >
                   <div className="flex items-center">
-                    <span className="truncate">Name</span> {getSortIcon('name')}
+                    <span className="truncate">Name</span>&nbsp;&nbsp;{getSortIcon('name')}
                   </div>
                 </th>
                 <th 
@@ -433,7 +279,7 @@ export function AccessTokensList() {
                   onClick={() => handleSort('owner')}
                 >
                   <div className="flex items-center">
-                    <span className="truncate">Owner</span> {getSortIcon('owner')}
+                    <span className="truncate">Owner</span>&nbsp;&nbsp;{getSortIcon('owner')}
                   </div>
                 </th>
                 <th 
@@ -441,7 +287,7 @@ export function AccessTokensList() {
                   onClick={() => handleSort('creationDate')}
                 >
                   <div className="flex items-center">
-                    <span className="truncate">Created</span> {getSortIcon('creationDate')}
+                    <span className="truncate">Created</span>&nbsp;&nbsp;{getSortIcon('creationDate')}
                   </div>
                 </th>
                 <th 
@@ -449,7 +295,7 @@ export function AccessTokensList() {
                   onClick={() => handleSort('lastModified')}
                 >
                   <div className="flex items-center">
-                    <span className="truncate">Modified</span> {getSortIcon('lastModified')}
+                    <span className="truncate">Modified</span>&nbsp;&nbsp;{getSortIcon('lastModified')}
                   </div>
                 </th>
                 <th 
@@ -457,7 +303,7 @@ export function AccessTokensList() {
                   onClick={() => handleSort('role')}
                 >
                   <div className="flex items-center">
-                    <span className="truncate">Role</span> {getSortIcon('role')}
+                    <span className="truncate">Role</span>&nbsp;&nbsp;{getSortIcon('role')}
                   </div>
                 </th>
                 {showApiVersion && (
@@ -466,7 +312,7 @@ export function AccessTokensList() {
                     onClick={() => handleSort('apiVersion')}
                   >
                     <div className="flex items-center">
-                      <span className="truncate">API Ver</span> {getSortIcon('apiVersion')}
+                      <span className="truncate">API Ver</span>&nbsp;&nbsp;{getSortIcon('apiVersion')}
                     </div>
                   </th>
                 )}
@@ -475,7 +321,7 @@ export function AccessTokensList() {
                   onClick={() => handleSort('lastUsed')}
                 >
                   <div className="flex items-center">
-                    <span className="truncate">Last Used</span> {getSortIcon('lastUsed')}
+                    <span className="truncate">Last Used</span>&nbsp;&nbsp;{getSortIcon('lastUsed')}
                   </div>
                 </th>
                 <th className="w-32 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -528,24 +374,17 @@ export function AccessTokensList() {
                   </td>
                   <td className="px-3 py-4 whitespace-nowrap">
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => handleDeleteToken(token._id, token.name)}
-                        disabled={deletingTokenId === token._id}
-                        className={`text-red-600 hover:text-red-800 text-sm font-medium ${
-                          deletingTokenId === token._id ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                      >
-                        {deletingTokenId === token._id ? 'Deleting...' : 'Delete'}
-                      </button>
-                      <button
-                        onClick={() => handleResetClick(token)}
-                        disabled={resettingTokenId === token._id}
-                        className={`text-blue-600 hover:text-blue-800 text-sm font-medium ${
-                          resettingTokenId === token._id ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                      >
-                        {resettingTokenId === token._id ? 'Resetting...' : 'Reset'}
-                      </button>
+                      <DeleteTokenButton
+                        tokenId={token._id}
+                        tokenName={token.name}
+                        isDeleting={deletingTokenId === token._id}
+                        onDelete={handleDeleteToken}
+                      />
+                      <ResetTokenButton
+                        token={token}
+                        isResetting={resettingTokenId === token._id}
+                        onReset={handleResetClick}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -555,7 +394,7 @@ export function AccessTokensList() {
         </div>
       </div>
 
-      <ResetModal
+      <ResetTokenModal
         isOpen={resetModalOpen}
         onClose={() => {
           setResetModalOpen(false);
@@ -565,7 +404,7 @@ export function AccessTokensList() {
         tokenName={selectedToken?.name || ''}
       />
 
-      <NewTokenDisplay
+      <NewTokenModal
         token={newToken}
         onClose={() => setNewToken(null)}
       />

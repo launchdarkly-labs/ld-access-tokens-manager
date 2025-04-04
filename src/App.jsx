@@ -1,11 +1,22 @@
 import { useState } from 'react'
 import { AccessTokensList } from './components/AccessTokensList'
+import { ApiTokenInput } from './components/ApiTokenInput'
+import { LoadTokensButton } from './components/LoadTokensButton'
 import './App.css'
 
 console.log(import.meta.env.VITE_LD_API_TOKEN)
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [apiToken, setApiToken] = useState(import.meta.env.VITE_LD_API_TOKEN || '');
+  const [showTokensList, setShowTokensList] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [shouldLoadTokens, setShouldLoadTokens] = useState(false);
+
+  const handleTokenSubmit = (token) => {
+    setApiToken(token);
+    setShowTokensList(true);
+    setShouldLoadTokens(false); // Reset loading state when token changes
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 py-8 w-screen">
@@ -17,14 +28,25 @@ function App() {
           This is a simple client for managing API (service) access tokens in
           LaunchDarkly.
         </p>
-        <div className="bg-white rounded-lg shadow p-4 mb-8">
-          <p className="text-sm text-gray-500">
-            The API token used by this service is:
-            <br />
-            <code className="bg-gray-100 px-2 py-1 rounded">{import.meta.env.VITE_LD_API_TOKEN}</code>
-          </p>
-        </div>
-        <AccessTokensList />
+        <ApiTokenInput 
+          defaultToken={import.meta.env.VITE_LD_API_TOKEN}
+          onTokenSubmit={handleTokenSubmit}
+        />
+        {showTokensList && apiToken && (
+          <div className="mt-8 space-y-4">
+            <div className="flex justify-end">
+              <LoadTokensButton
+                onLoad={() => setShouldLoadTokens(true)}
+                isLoading={isLoading}
+              />
+            </div>
+            <AccessTokensList 
+              apiToken={apiToken}
+              shouldLoad={shouldLoadTokens}
+              onLoadingChange={setIsLoading}
+            />
+          </div>
+        )}
       </div>
     </div>
   )
