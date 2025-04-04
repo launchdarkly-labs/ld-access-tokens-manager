@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { AccessToken, TokensResponse, ResetTokenResponse, SortField, SortDirection } from '../types/AccessToken';
+import { AccessToken, TokensResponse, ResetTokenResponse, SortField, SortDirection, TokenType } from '../types/AccessToken';
 import { DeleteTokenButton } from './DeleteTokenButton';
 import { ResetTokenButton } from './ResetTokenButton';
 import { ResetTokenModal } from './ResetTokenModal';
 import { NewTokenModal } from './NewTokenModal';
 import { determineRole, formatDate } from '../utils/tokenUtils';
+import { TokenTypeFilter } from './TokenTypeFilter';
 
 interface AccessTokensListProps {
   apiToken: string;
@@ -26,48 +27,37 @@ export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: Acce
   const [selectedToken, setSelectedToken] = useState<AccessToken | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
   const [resettingTokenId, setResettingTokenId] = useState<string | null>(null);
+  const [tokenType, setTokenType] = useState<TokenType | 'all'>('all');
 
   const fetchAllTokens = async () => {
     setIsLoading(true);
     onLoadingChange(true);
     setError(null);
-    const uniqueTokens = new Map<string, AccessToken>();
-    const limit = 50;
 
     try {
-      let offset = 0;
-      let totalCount = 0;
-
-      do {
-        const url = `https://app.launchdarkly.com/api/v2/tokens?offset=${offset}&limit=${limit}`;
-        
-        const response = await fetch(url, {
-          headers: {
-            'Authorization': apiToken,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`HTTP error! status: ${response.status}, details: ${errorText}`);
+      const url = 'https://app.launchdarkly.com/api/v2/tokens?showAll=true';
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': apiToken,
+          'Content-Type': 'application/json'
         }
+      });
 
-        const data: TokensResponse = await response.json();
-        
-        if (offset === 0) {
-          totalCount = data.totalCount;
-        }
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-        data.items.forEach(token => {
-          uniqueTokens.set(token._id, token);
-        });
-        
-        offset += limit;
-      } while (offset < totalCount);
-
-      const allTokens = Array.from(uniqueTokens.values())
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const data: TokensResponse = await response.json();
+      
+      const allTokens = data.items.map(token => ({
+        ...token,
+        name: token.name || `Unnamed Token (${token._id})`,
+        _tokenType: token.serviceToken ? 'service' : 'personal' as TokenType
+      })).sort((a, b) => {
+        const nameA = a.name || '';
+        const nameB = b.name || '';
+        return nameA.localeCompare(nameB);
+      });
 
       setTokens(allTokens);
     } catch (err) {
@@ -177,6 +167,14 @@ export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: Acce
       );
     }
 
+    // Filter by token type if not 'all'
+    if (tokenType !== 'all') {
+      result = result.filter(token => 
+        (tokenType === 'service' && token.serviceToken) || 
+        (tokenType === 'personal' && !token.serviceToken)
+      );
+    }
+
     result.sort((a, b) => {
       let compareResult = 0;
       switch (sortField) {
@@ -208,7 +206,7 @@ export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: Acce
     });
 
     return result;
-  }, [tokens, sortField, sortDirection, searchTerm]);
+  }, [tokens, sortField, sortDirection, searchTerm, tokenType]);
 
   if (!shouldLoad) {
     return null;
@@ -239,8 +237,16 @@ export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: Acce
           )}
 
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-            <h2 className="text-xl font-bold">Service Access Tokens ({filteredAndSortedTokens.length} total)</h2>
+            <h2 className="text-xl font-bold">
+              Access Tokens ({filteredAndSortedTokens.length} total)
+            </h2>
             <div className="flex items-center gap-4">
+              <TokenTypeFilter
+                selectedType={tokenType}
+                onChange={(type) => {
+                  setTokenType(type);
+                }}
+              />
               <label className="flex items-center gap-2 text-sm text-gray-600 whitespace-nowrap">
                 <input
                   type="checkbox"

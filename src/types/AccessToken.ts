@@ -31,4 +31,10 @@ export interface ResetTokenResponse {
 }
 
 export type SortField = 'name' | 'owner' | 'creationDate' | 'role' | 'apiVersion' | 'lastUsed' | 'lastModified';
-export type SortDirection = 'asc' | 'desc'; 
+export type SortDirection = 'asc' | 'desc';
+
+export type TokenType = 'service' | 'personal';
+
+export interface TokenFilters {
+  type: TokenType | 'all';
+} 
