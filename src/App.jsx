@@ -11,11 +11,18 @@ function App() {
   const [showTokensList, setShowTokensList] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [shouldLoadTokens, setShouldLoadTokens] = useState(false);
+  const [tokenCount, setTokenCount] = useState(0);
 
   const handleTokenSubmit = (token) => {
     setApiToken(token);
     setShowTokensList(true);
-    setShouldLoadTokens(false); // Reset loading state when token changes
+    setShouldLoadTokens(false);
+    setTokenCount(0);
+  };
+
+  const handleLoadTokens = () => {
+    setShouldLoadTokens(false);
+    setTimeout(() => setShouldLoadTokens(true), 0);
   };
 
   return (
@@ -36,14 +43,16 @@ function App() {
           <div className="mt-8 space-y-4">
             <div className="flex justify-end">
               <LoadTokensButton
-                onLoad={() => setShouldLoadTokens(true)}
+                onLoad={handleLoadTokens}
                 isLoading={isLoading}
+                hasLoadedTokens={tokenCount > 0}
               />
             </div>
             <AccessTokensList 
               apiToken={apiToken}
               shouldLoad={shouldLoadTokens}
               onLoadingChange={setIsLoading}
+              onTokensLoaded={setTokenCount}
             />
           </div>
         )}

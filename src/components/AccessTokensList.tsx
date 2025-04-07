@@ -11,9 +11,10 @@ interface AccessTokensListProps {
   apiToken: string;
   shouldLoad: boolean;
   onLoadingChange: (isLoading: boolean) => void;
+  onTokensLoaded: (tokenCount: number) => void;
 }
 
-export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: AccessTokensListProps) {
+export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange, onTokensLoaded }: AccessTokensListProps) {
   const [tokens, setTokens] = useState<AccessToken[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +102,7 @@ export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: Acce
       });
 
       setTokens(allTokens);
+      onTokensLoaded(allTokens.length);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred while fetching tokens');
     } finally {
@@ -187,8 +189,25 @@ export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: Acce
       const resetData: ResetTokenResponse = await resetResponse.json();
       setNewToken(resetData.token);
 
-      // Then, update the lastModified timestamp
-      const now = Date.now();
+      // Update the name to include the reset date
+      const currentDate = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY format
+      const resetSuffix = ` | Last reset: ${currentDate}`;
+      
+      let newName = selectedToken.name || `Unnamed Token (${selectedToken._id})`;
+      
+      // Check if there's already a reset date in the name
+      if (newName.includes(' | Last reset:')) {
+        // Replace the existing reset date
+        newName = newName.replace(
+          / \| Last reset: \d{2}\/\d{2}\/\d{4}/,
+          resetSuffix
+        );
+      } else {
+        // Add the reset date at the end
+        newName = `${newName}${resetSuffix}`;
+      }
+
+      // Update the token name
       const patchResponse = await fetch(`https://app.launchdarkly.com/api/v2/tokens/${selectedToken._id}`, {
         method: 'PATCH',
         headers: {
@@ -198,17 +217,17 @@ export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: Acce
         body: JSON.stringify([
           {
             op: 'replace',
-            path: '/lastModified',
-            value: now
+            path: '/name',
+            value: newName
           }
         ])
       });
 
       if (!patchResponse.ok) {
-        console.warn('Failed to update lastModified timestamp');
+        console.warn('Failed to update token name');
       }
 
-      // Refresh the tokens list to show updated timestamp
+      // Refresh the tokens list to show updated name
       await fetchAllTokens();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reset token');
@@ -216,6 +235,10 @@ export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: Acce
       setResettingTokenId(null);
       setSelectedToken(null);
     }
+  };
+
+  const handleNewTokenModalClose = () => {
+    setNewToken(null);
   };
 
   const filteredAndSortedTokens = useMemo(() => {
@@ -483,7 +506,7 @@ export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: Acce
 
       <NewTokenModal
         token={newToken}
-        onClose={() => setNewToken(null)}
+        onClose={handleNewTokenModalClose}
       />
     </>
   );
