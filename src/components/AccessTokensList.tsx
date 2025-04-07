@@ -168,7 +168,8 @@ export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: Acce
     setError(null);
 
     try {
-      const response = await fetch(`https://app.launchdarkly.com/api/v2/tokens/${selectedToken._id}/reset`, {
+      // First, reset the token
+      const resetResponse = await fetch(`https://app.launchdarkly.com/api/v2/tokens/${selectedToken._id}/reset`, {
         method: 'POST',
         headers: {
           'Authorization': apiToken,
@@ -179,13 +180,35 @@ export function AccessTokensList({ apiToken, shouldLoad, onLoadingChange }: Acce
         })
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to reset token: ${errorText}`);
+      if (!resetResponse.ok) {
+        throw new Error(`Failed to reset token: ${await resetResponse.text()}`);
       }
 
-      const data: ResetTokenResponse = await response.json();
-      setNewToken(data.token);
+      const resetData: ResetTokenResponse = await resetResponse.json();
+      setNewToken(resetData.token);
+
+      // Then, update the lastModified timestamp
+      const now = Date.now();
+      const patchResponse = await fetch(`https://app.launchdarkly.com/api/v2/tokens/${selectedToken._id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': apiToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify([
+          {
+            op: 'replace',
+            path: '/lastModified',
+            value: now
+          }
+        ])
+      });
+
+      if (!patchResponse.ok) {
+        console.warn('Failed to update lastModified timestamp');
+      }
+
+      // Refresh the tokens list to show updated timestamp
       await fetchAllTokens();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reset token');
