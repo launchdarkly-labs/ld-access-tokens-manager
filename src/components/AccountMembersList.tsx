@@ -123,7 +123,7 @@ export function AccountMembersList({
                   <button
                     onClick={() => handleDelete(member._id)}
                     disabled={deletingId === member._id}
-                    className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50 transition-colors duration-200"
+                    className="px-3 py-1 bg-red-500 text-gray-700 rounded hover:bg-red-600 disabled:opacity-50 transition-colors duration-200"
                   >
                     {deletingId === member._id ? 'Deleting...' : 'Delete'}
                   </button>

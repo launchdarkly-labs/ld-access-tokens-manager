@@ -57,7 +57,7 @@ function App() {
             onClick={() => setActiveTab('tokens')}
             className={`px-4 py-2 rounded-md transition-colors duration-200 ${
               activeTab === 'tokens' 
-                ? 'bg-blue-600 text-white shadow-sm' 
+                ? 'bg-blue-600 text-gray-700 shadow-sm' 
                 : 'bg-white text-gray-900 hover:bg-gray-100 border border-gray-300'
             }`}
           >
@@ -67,7 +67,7 @@ function App() {
             onClick={() => setActiveTab('members')}
             className={`px-4 py-2 rounded-md transition-colors duration-200 ${
               activeTab === 'members' 
-                ? 'bg-blue-600 text-white shadow-sm' 
+                ? 'bg-blue-600 text-gray-700 shadow-sm' 
                 : 'bg-white text-gray-900 hover:bg-gray-100 border border-gray-300'
             }`}
           >
