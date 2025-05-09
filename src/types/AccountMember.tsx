@@ -5,7 +5,7 @@ export interface AccountMember {
     lastName: string;
     role: string;
     creationDate: number;
-    lastSeen?: number;
+    _lastSeen?: number;
   }
   
   export interface MembersResponse {
