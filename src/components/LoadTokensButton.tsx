@@ -1,17 +1,18 @@
 import React from 'react';
 
-interface LoadTokensButtonProps {
+interface LoadButtonProps {
   onLoad: () => void;
   isLoading: boolean;
   hasLoadedTokens: boolean;
+  buttonText: string;
 }
 
-export function LoadTokensButton({ onLoad, isLoading, hasLoadedTokens }: LoadTokensButtonProps) {
+export function LoadTokensButton({ onLoad, isLoading, hasLoadedTokens, buttonText }: LoadButtonProps) {
   return (
     <button
       onClick={onLoad}
       disabled={isLoading}
-      className="px-4 py-2 bg-blue-500 text-gray-800 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm"
     >
       {isLoading ? (
         <div className="flex items-center gap-2">
@@ -19,7 +20,7 @@ export function LoadTokensButton({ onLoad, isLoading, hasLoadedTokens }: LoadTok
           <span>Loading...</span>
         </div>
       ) : (
-        hasLoadedTokens ? 'Reload Access Tokens' : 'Load Access Tokens'
+        buttonText
       )}
     </button>
   );
