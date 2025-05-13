@@ -6,16 +6,18 @@ interface AccountMembersListProps {
   shouldLoad: boolean;
   onLoadingChange: (isLoading: boolean) => void;
   onMembersLoaded: (count: number) => void;
+  showMemberId?: boolean;
 }
 
-type SortColumn = 'firstName' | 'email' | 'role' | 'creationDate' | '_lastSeen';
+type SortColumn = 'firstName' | 'email' | 'role' | 'creationDate' | '_lastSeen' | '_id';
 type SortDirection = 'asc' | 'desc';
 
 export function AccountMembersList({ 
   apiToken, 
   shouldLoad, 
   onLoadingChange,
-  onMembersLoaded 
+  onMembersLoaded,
+  showMemberId: initialShowMemberId = false
 }: AccountMembersListProps) {
   const [members, setMembers] = useState<AccountMember[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -24,6 +26,7 @@ export function AccountMembersList({
   const [nextPageUrl, setNextPageUrl] = useState<string | null>(null);
   const [sortColumn, setSortColumn] = useState<SortColumn>('firstName');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [showMemberId, setShowMemberId] = useState(initialShowMemberId);
 
   const BASE_URL = 'https://app.launchdarkly.com/api/v2/';
 
@@ -150,11 +153,28 @@ export function AccountMembersList({
 
   return (
     <div className="w-full">
-      <h2 className="text-xl font-bold mb-4">Account Members ({members.length})</h2>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-bold">Account Members ({members.length})</h2>
+        <button
+          onClick={() => setShowMemberId(!showMemberId)}
+          className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors duration-200 flex items-center gap-2"
+        >
+          <span>{showMemberId ? 'Hide' : 'Show'} Member ID</span>
+          <span className="text-sm">{showMemberId ? '👁️' : '👁️‍🗨️'}</span>
+        </button>
+      </div>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 bg-white shadow-sm rounded-lg">
           <thead className="bg-gray-50">
             <tr>
+              {showMemberId && (
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('_id')}
+                >
+                  Member ID <SortIcon column="_id" />
+                </th>
+              )}
               <th 
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('firstName')}
@@ -191,6 +211,9 @@ export function AccountMembersList({
           <tbody className="bg-white divide-y divide-gray-200">
             {sortedMembers.map(member => (
               <tr key={member._id} className="hover:bg-gray-50">
+                {showMemberId && (
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">{member._id}</td>
+                )}
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{member.firstName} {member.lastName}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{member.email}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{member.role}</td>
